@@ -1,0 +1,203 @@
+####---- general libraries ----####
+
+library(ggplot2)
+library(ggrepel)
+library(reshape)
+library(ggridges)
+
+####---- DE sample and group names ----####
+
+samples = c("B2_NADYA_01_01","B2_NADYA_01_02","B1_NADYA_01_01","B1_NADYA_01_02","B1_NADYA_01_03","B1_NADYA_01_04","B1_NADYA_01_05","B1_NADYA_01_06","B1_NADYA_01_07","B1_NADYA_01_08","B1_NADYA_01_09","B1_NADYA_01_11","B2_NADYA_01_03","B2_NADYA_01_04","B2_NADYA_01_05","B2_NADYA_01_06","B2_NADYA_01_07","B2_NADYA_01_08","B2_NADYA_01_09","B2_NADYA_01_10","B2_NADYA_01_11","B2_NADYA_01_12","B1_NADYA_01_10","B1_NADYA_01_12")
+sample_groups = c("CONTROL","HD")
+sample_groups = factor(sample_groups, levels = sample_groups)
+sample_groupings = c("CONTROL","CONTROL","CONTROL","CONTROL","CONTROL","CONTROL","CONTROL","CONTROL","CONTROL","CONTROL","CONTROL","CONTROL","HD","HD","HD","HD","HD","HD","HD","HD","HD","HD","HD","HD")
+sample_groupings = factor(sample_groupings, levels = sample_groups)
+samples_by_sample_group = list(c("B2_NADYA_01_01","B2_NADYA_01_02","B1_NADYA_01_01","B1_NADYA_01_02","B1_NADYA_01_03","B1_NADYA_01_04","B1_NADYA_01_05","B1_NADYA_01_06","B1_NADYA_01_07","B1_NADYA_01_08","B1_NADYA_01_09","B1_NADYA_01_11"),c("B2_NADYA_01_03","B2_NADYA_01_04","B2_NADYA_01_05","B2_NADYA_01_06","B2_NADYA_01_07","B2_NADYA_01_08","B2_NADYA_01_09","B2_NADYA_01_10","B2_NADYA_01_11","B2_NADYA_01_12","B1_NADYA_01_10","B1_NADYA_01_12"))
+comparisons = c("HD vs CONTROL")
+
+####---- sets the working directory. If you move the SL2 folder please update this path ----####
+
+setwd("C:/Users/joe_s/OneDrive/Documents/Work/BHP/Bioinformatics/Searchlight_metabolism_allsamplesoptimal/URA/all_genes/de_workflows/HD_vs_CONTROL")
+
+####---- de input files ----####
+
+de_annotated = read.table(file="data/de_annotated.csv", header=TRUE,row.names = 2, sep='\t', quote='',check.names = TRUE)
+de_annotated_sig = read.table(file="data/de_annotated_significant.csv", header=TRUE,row.names = 2, sep='\t', quote='',check.names = TRUE)
+
+####---- de parse ne matrix ----####
+
+ne_matrix = de_annotated[,samples]
+ne_matrix_sig = de_annotated_sig[,samples]
+
+####---- transpose and scale ne matrix ----####
+
+ne_matrix_transposed = data.frame(t(ne_matrix))
+colnames(ne_matrix_transposed) = rownames(ne_matrix)
+
+ne_matrix_scaled = data.frame(t(scale(t(ne_matrix))))
+rownames(ne_matrix_scaled) = rownames(ne_matrix)
+ne_matrix_scaled[do.call(cbind, lapply(ne_matrix_scaled, is.nan))] <- 0
+ne_matrix_scaled = ne_matrix_scaled[is.finite(rowSums(ne_matrix_scaled)), ]
+
+ne_matrix_scaled_transposed = data.frame(t(ne_matrix_scaled))
+colnames(ne_matrix_scaled_transposed) = rownames(ne_matrix_scaled)
+
+####---- SL2 Theme ----####
+
+theme_SL2 <- function () { 
+    theme_bw() %+replace% 
+        theme(
+	    panel.grid = element_blank(),
+            panel.background = element_blank(),
+            panel.border = element_rect(colour = "black", fill=NA, linewidth=1),
+            plot.background = element_blank(), 
+            legend.background = element_rect(fill="transparent", colour=NA),
+            legend.key = element_rect(fill="transparent", colour=NA),
+            plot.title = element_text(size=12, margin = margin(b = 5),hjust=0,vjust=0.5, face="bold"),
+            title = element_text(size = 12, margin = margin(b = 5),hjust=0,vjust=0.5, face="bold"),
+            axis.text.y = element_text(size = 10, margin = margin(r = 5),hjust=1,vjust=0.5, face="bold",colour="black"),
+            axis.text.x = element_text(size = 10, margin = margin(t = 5),hjust=0.5,vjust=1, face="bold",colour="black"),
+            axis.title.y = element_text(size = 11, margin = margin(r = 10),angle = 90,hjust=0.5,vjust=0.5, face="bold"),
+            axis.title.x = element_text(size = 11, margin = margin(t = 10),hjust=0.5,vjust=1, face="bold"),
+            legend.text=element_text(size=11, face="bold"),
+            legend.title=element_blank(), 
+            legend.key.size=unit(2.5,"line"),
+            plot.margin=unit(c(0.4,0.4,0.4,0.4), "cm")
+        )
+}
+
+####----- Default GGplot Colours Function -----####
+
+gg_color_hue <- function(n)
+{
+  # default colour blind palettes
+  cblind_palette = c("#88CCEE", "#CC6677", "#DDCC77", "#117733", "#332288", "#AA4499", "#44AA99", "#999933", "#882255", "#661100", "#6699CC", "#888888")
+
+  # append ggplot colours if groups goes above colour blind palette length
+  if (n <= length(cblind_palette))
+  {
+    return(cblind_palette[1:n])
+  }
+  else
+  {
+    nn = n - length(cblind_palette)
+    hues = seq(15, 375, length = nn + 1)
+    return(append(cblind_palette,hcl(h = hues, l = 65, c = 100)[1:nn]))
+  }
+}
+
+####---- Default Sample and Sample Group Colours  ----####
+
+number_of_sample_groups = length(sample_groups)
+default_sample_group_colours = gg_color_hue(number_of_sample_groups)
+default_samples_colours = c(default_sample_group_colours[1],default_sample_group_colours[1],default_sample_group_colours[1],default_sample_group_colours[1],default_sample_group_colours[1],default_sample_group_colours[1],default_sample_group_colours[1],default_sample_group_colours[1],default_sample_group_colours[1],default_sample_group_colours[1],default_sample_group_colours[1],default_sample_group_colours[1],default_sample_group_colours[2],default_sample_group_colours[2],default_sample_group_colours[2],default_sample_group_colours[2],default_sample_group_colours[2],default_sample_group_colours[2],default_sample_group_colours[2],default_sample_group_colours[2],default_sample_group_colours[2],default_sample_group_colours[2],default_sample_group_colours[2],default_sample_group_colours[2])
+
+####---- Default Sample Labels  ----####
+
+default_sample_labels = gsub("_"," ",c("B2_NADYA_01_01","B2_NADYA_01_02","B1_NADYA_01_01","B1_NADYA_01_02","B1_NADYA_01_03","B1_NADYA_01_04","B1_NADYA_01_05","B1_NADYA_01_06","B1_NADYA_01_07","B1_NADYA_01_08","B1_NADYA_01_09","B1_NADYA_01_11","B2_NADYA_01_03","B2_NADYA_01_04","B2_NADYA_01_05","B2_NADYA_01_06","B2_NADYA_01_07","B2_NADYA_01_08","B2_NADYA_01_09","B2_NADYA_01_10","B2_NADYA_01_11","B2_NADYA_01_12","B1_NADYA_01_10","B1_NADYA_01_12")) # note: changing this won't change the order the samples appear on the plots. Merely what they are labelled as.
+
+####---- Default Sample Group Labels  ----####
+
+default_sample_group_labels = gsub("_"," ",c("CONTROL","HD")) # note: changing this won't change the order the groups appear on the plots. Merely what they are labelled as.
+
+####---- Save Plot Function -----####
+
+save_plot <- function(ggp,plot_height,plot_width,plot_path)
+{
+  png(plot_path, height=plot_height, width=plot_width, pointsize=5)
+  print(ggp)
+  dev.off()
+
+  svg(gsub(".png", ".svg", plot_path), height=plot_height/90, width=plot_width/90)
+  print(ggp)
+  dev.off()
+
+  # clears all devices - as a safety measure
+  while (dev.cur()>1) dev.off()
+}
+
+####---- PCA Scatter Plot Function ----####
+
+make_PCA_scatterplot <- function(plot_sample_groupings,comp_x,comp_y,x_axis_label,y_axis_label,plot_sample_group_colours,plot_sample_group_labels,plot_sample_labels,dot_size,dot_transparency,legend_position,sample_label_size,show_proportion_of_variance, show_sample_labels)
+{
+
+  # Do PCA
+  prcomp_data = prcomp(as.matrix(sapply(ne_matrix_scaled_transposed, as.numeric)))
+  prcomp_coordinates = data.frame(prcomp_data$x)
+
+  # Get variance
+  if (show_proportion_of_variance == TRUE)
+  {
+    vars = apply(prcomp_data$x, 2, var)
+    prop_x = round(vars[comp_x] / sum(vars),4) * 100
+    prop_y = round(vars[comp_y] / sum(vars),4) * 100
+
+    x_axis_label = paste(x_axis_label, " (",prop_x,"%)",sep="")
+    y_axis_label = paste(y_axis_label, " (",prop_y,"%)",sep="")
+  }
+
+  # Prepare Table
+  prcomp_coordinates = prcomp_coordinates[,c(component_x, component_y)]
+  names(prcomp_coordinates) = c("comp_x","comp_y")
+
+  # labels
+  if (show_sample_labels == TRUE)
+  {
+    plot_sample_labels = plot_sample_labels
+  }
+  else
+  {
+    plot_sample_labels = NA
+  }
+
+  #make plot
+  ggp = ggplot(data=prcomp_coordinates, aes(x=comp_x, y=comp_y, colour=plot_sample_groupings)) +
+    geom_point(size=dot_size,alpha=dot_transparency) +
+    geom_label_repel(aes(label=plot_sample_labels), size=sample_label_size, force = 1,box.padding = 1.5, label.padding = unit(0.5, "lines"), show.legend = FALSE, colour = "black") +
+    scale_color_manual(values=plot_sample_group_colours,labels=plot_sample_group_labels, name="") +
+    xlim(c(min(prcomp_coordinates$comp_x)*1.25,max(prcomp_coordinates$comp_x)*1.25)) +
+    ylim(c(min(prcomp_coordinates$comp_y)*1.25,max(prcomp_coordinates$comp_y)*1.25)) +
+    labs(x=x_axis_label, y=y_axis_label) +
+    theme_SL2() +
+    theme(legend.position=legend_position, legend.spacing.x = unit(0.25, 'cm'))
+
+  return(ggp) 
+}
+
+####---- PCA (Scatter Plots) ----####
+
+plot_height = 300
+plot_width = 300
+plot_sample_group_colours = default_sample_group_colours
+plot_sample_group_labels = default_sample_group_labels
+plot_sample_labels = default_sample_labels
+plot_sample_groupings = sample_groupings
+dot_size = 4
+dot_transparency = 1
+legend_position = "bottom"
+sample_label_size = 3.5
+show_proportion_of_variance = TRUE
+show_sample_labels = TRUE
+
+component_x = 1
+component_y = 2
+x_axis_label = "PC1"
+y_axis_label = "PC2"
+ggp = make_PCA_scatterplot(plot_sample_groupings,component_x,component_y,x_axis_label,y_axis_label,plot_sample_group_colours,plot_sample_group_labels,plot_sample_labels,dot_size,dot_transparency,legend_position,sample_label_size,show_proportion_of_variance, show_sample_labels)
+save_plot(ggp,plot_height,plot_width,"plots/PCA/PCA_1_vs_PCA_2_scatter_plot_labelled.png")
+
+show_sample_labels = FALSE
+ggp = make_PCA_scatterplot(plot_sample_groupings,component_x,component_y,x_axis_label,y_axis_label,plot_sample_group_colours,plot_sample_group_labels,plot_sample_labels,dot_size,dot_transparency,legend_position,sample_label_size,show_proportion_of_variance, show_sample_labels)
+save_plot(ggp,plot_height,plot_width,"plots/PCA/PCA_1_vs_PCA_2_scatter_plot_unlabelled.png")
+
+component_x = 3
+component_y = 4
+x_axis_label = "PC3"
+y_axis_label = "PC4"
+show_sample_labels = TRUE
+ggp = make_PCA_scatterplot(plot_sample_groupings,component_x,component_y,x_axis_label,y_axis_label,plot_sample_group_colours,plot_sample_group_labels,plot_sample_labels,dot_size,dot_transparency,legend_position,sample_label_size,show_proportion_of_variance, show_sample_labels)
+save_plot(ggp,plot_height,plot_width,"plots/PCA/PCA_3_vs_PCA_4_scatter_plot_labelled.png")
+
+show_sample_labels = FALSE
+ggp = make_PCA_scatterplot(plot_sample_groupings,component_x,component_y,x_axis_label,y_axis_label,plot_sample_group_colours,plot_sample_group_labels,plot_sample_labels,dot_size,dot_transparency,legend_position,sample_label_size,show_proportion_of_variance, show_sample_labels)
+save_plot(ggp,plot_height,plot_width,"plots/PCA/PCA_3_vs_PCA_4_scatter_plot_unlabelled.png")
