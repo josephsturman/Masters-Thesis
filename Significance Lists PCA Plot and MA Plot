@@ -1,0 +1,130 @@
+#1. Load libraries ####
+
+setwd("C:\\Users\\joe_s\\OneDrive\\Documents\\Work\\BHP\\Bioinformatics\\Immune_Panel_R")
+
+#2. Load data files ####
+de=read.table("de.csv", header=TRUE, row.names=1, sep=",")
+ss=read.table("ss.csv", header=TRUE, sep=",")
+em=read.table("em.csv", header=TRUE, row.names=1, sep=",")
+annotations=read.table("annotations.csv",header=TRUE, row.names=1, sep=",")
+
+#3. Parse data files ####
+
+# Ensure em and de are numeric tables
+
+
+#Creating row means for em
+em$meanexpress=rowMeans(em)
+
+#Creating and Parsing 'master'
+master=merge(em,annotations,by.x=0,by.y=1)
+master=merge(master,de,by.x=1,by.y=0)
+row.names(master)=master$Row.names
+
+master=master[,-which(names(master)=="Row.names")]
+
+master=na.omit(master)
+ascending_padj_order=order(master[,"p.adj"],decreasing=FALSE)
+master_ascending_padj=master[ascending_padj_order,]
+
+#Making em_symbols
+em_symbols=master[,ss$SAMPLE]
+
+#Adding in -Log10 P value column
+master$mlog10p=-log10(master$p)
+master$adjmlog10p=-log10(master$p.adj)
+
+master_ascending_padj$mlog10p=-log10(master_ascending_padj$p)
+master_ascending_padj$adjpmlog10p=-log10(master_ascending_padj$p.adj)
+
+#Adding a column flagging significance
+master_ascending_padj$sig=as.factor(master_ascending_padj$p.adj<0.05 & abs(master_ascending_padj$log2fold)>1.0)
+master$sig=as.factor(master$p.adj<0.05 & abs(master$log2fold)>1.0)
+
+#Making a Scaled Expression Matrix for using Z scores in heatmaps later
+
+em_scaled=data.frame(t(scale(t(em_symbols))))
+em_scaled=na.omit(em_scaled)
+
+#Making a significant Genes Table Using Subset
+subset(de,p.adj<0.05)
+master_sig=subset(master_ascending_padj,p.adj<0.05&abs(log2fold)>1.0)
+master_sig_boolean=subset(master_ascending_padj,sig==TRUE)
+
+#Making a List of Significant Genes
+sig_genes=row.names(master_sig)
+em_symbols_sig=em_symbols[sig_genes,]
+em_scaled_sig=em_scaled[sig_genes,]
+
+#Making Lists of Upregulated and Downregulated Genes 
+master_sig_up=subset(master_sig,log2fold>1)
+master_sig_down=subset(master_sig,log2fold< -1)
+master_sig_up_top_10=master_sig_up[1:10,]
+master_sig_down_top_10=master_sig_down[1:10,]
+
+#4. Theme ####
+
+library(ggplot2)
+library(ggrepel)
+
+trial_theme=theme(
+  plot.title=element_text(size=10,hjust=0.5),
+  axis.text.x=element_text(size=10),
+  axis.text.y=element_text(size=10),
+  axis.title.x=element_text(size=10),
+  axis.title.y=element_text(size=10),
+  panel.background = element_rect(fill="transparent"),
+  panel.border=element_rect(linetype="solid",fill=NA))
+
+# PCA####
+# Converting data frame into numeric matrix 
+
+numeric_matrix= as.matrix(sapply(em_symbols,as.numeric))
+
+# Coding the PCA plot 
+
+pca=prcomp(t(numeric_matrix))
+
+# Extracting the Component Data 
+
+pca_coordinates=data.frame(pca$x)
+
+#Calcualating % Variance
+
+vars = apply(pca$x, 2, var)
+prop_x = round(vars["PC1"] / sum(vars),4) * 100
+prop_y = round(vars["PC2"] / sum(vars),4) * 100
+x_axis_label = paste("PC1 ", " (",prop_x, "%)",sep="")
+y_axis_label = paste("PC2 ", " (",prop_y, "%)",sep="")
+
+pca_plot_1=ggplot(pca_coordinates,aes(x=PC1,y=PC2,colour=ss$SAMPLE_GROUP))+
+  geom_point(size=5)+
+  labs(title="Principal Component Analysis",x=x_axis_label,y=y_axis_label)+
+  scale_colour_manual(values=c("green","gold"), labels=c("Control","HD"),name="")+
+  trial_theme
+
+pca_plot_1
+
+#making MA Plot
+map=ggplot(master,aes(x=log10(meanexpress),y=log2fold))+
+  geom_point(size=0.1,colour="grey",shape=7)+
+  geom_point(data=master_sig_up,colour="red")+
+  geom_point(data=master_sig_down,colour="blue")+
+  labs(title="MA Plot for Immune Panel Genes", x="Log10(Mean Gene Expression)", y="Log2(Fold Change)")+
+  theme_classic()+
+  geom_text_repel(data=master_sig_up_top_10,aes(label=row.names(master_sig_up_top_10)),colour="red")+
+  geom_text_repel(data=master_sig_down_top_10,aes(label=row.names(master_sig_down_top_10)),colour="blue")
+
+map
+
+map_beaut=ggplot(master,aes(x=log10(meanexpress),y=log2fold))+
+  geom_point(size=0.1,aes(colour="a"))+
+  geom_point(data=master_sig_up,aes(colour="b"))+
+  geom_point(data=master_sig_down,aes(colour="c"))+
+  labs(title="MA Plot for Immune Panel Genes", x="Log10(Mean Gene Expression)", y="Log2(Fold Change)")+
+  theme_classic()+
+  geom_text_repel(data=master_sig_up_top_10,aes(label=row.names(master_sig_up_top_10),colour="b"),show.legend=FALSE)+
+  geom_text_repel(data=master_sig_down_top_10,aes(label=row.names(master_sig_down_top_10),colour="c"),show.legend=FALSE)+
+  scale_colour_manual(values=c("grey","red","blue"),labels=c("Non-Significant","Upregulated","Downregulated"),name="")
+
+map_beaut
