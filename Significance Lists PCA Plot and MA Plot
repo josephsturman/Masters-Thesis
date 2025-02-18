@@ -47,9 +47,7 @@ em_scaled=data.frame(t(scale(t(em_symbols))))
 em_scaled=na.omit(em_scaled)
 
 #Making a significant Genes Table Using Subset
-subset(de,p.adj<0.05)
-master_sig=subset(master_ascending_padj,p.adj<0.05&abs(log2fold)>1.0)
-master_sig_boolean=subset(master_ascending_padj,sig==TRUE)
+master_sig=subset(de,p.adj<0.05)
 
 #Making a List of Significant Genes
 sig_genes=row.names(master_sig)
