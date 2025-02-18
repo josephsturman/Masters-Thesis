@@ -1,0 +1,139 @@
+#### Libraries ####
+
+library("ggplot2")
+library("DESeq2")
+library("reshape2")
+
+
+
+#### Load Data ####
+
+# set wd
+setwd("C:\\Users\\admin\\Desktop\\GBC\\courses\\block_1\\bonus\\advanced_code\\distribution_of_p\\data")
+
+# get counts
+counts = read.table(file="counts.csv", header=TRUE,row.names = 1, sep='\t')
+ss = read.table(file="ss.csv", header=TRUE, sep='\t')
+
+
+# check the sample names and order match between em and ss
+row.names(ss) = ss$SAMPLE
+counts = counts[,row.names(ss)]
+
+
+# remove genes with no expression
+counts = subset(counts,apply(counts, 1, mean) >= 1)
+
+
+
+#### Do N random iterations ####
+
+# size of random groups
+group_size = 15
+
+# number of iterations
+n_iterations = 10
+
+# genes to store
+genes_stored = 2500
+
+# stores results
+p_results = data.frame(matrix(NA, nrow = genes_stored, ncol = n_iterations))
+
+
+## loops
+for (iteration in 1:n_iterations)
+{
+  # set random seed
+  set.seed(iteration)
+  
+  # gets the random samples
+  random_group_1 = ss[sample(nrow(ss), group_size, replace=FALSE),]
+  random_group_2 = ss[sample(nrow(ss), group_size, replace=FALSE),]
+  
+  # builds the new ss
+  random_group_1$SAMPLE_GROUP = "A"
+  random_group_2$SAMPLE_GROUP = "B"
+  ss_random = rbind(random_group_1, random_group_2)
+  
+  # builds new counts
+  counts_random = counts[,ss_random$SAMPLE]
+  
+  # does the DESEQ2
+  condition = factor(ss_random$SAMPLE_GROUP) 
+  countdata = as.matrix(counts_random)
+  coldata = data.frame(row.names=colnames(countdata),condition)
+  dds = DESeqDataSetFromMatrix(countData=countdata, colData=coldata, design=~condition)
+  dds = DESeq(dds)
+  
+  # gets the results
+  res = results(dds, c("condition","A","B"))
+  res = res[order(res$pvalue), ]
+  resdata = as.data.frame(res)[1:genes_stored,]
+  
+  # store results
+  p_results[,iteration] = resdata$pvalue
+}
+
+
+# get mean random result
+p_results$random = rowMeans(p_results)
+
+# trim away the individual results
+p_results = data.frame(p_results[,-c(1:n_iterations)])
+names(p_results) = "Random"
+
+# add a column for rank
+p_results$rank = as.numeric(row.names(p_results))
+
+
+
+#### Add real DEs ####
+
+## load some real DE tables now.
+
+# Add DE 1 - note we call the new results column COPD
+de = read.table(file="DE_COPD_vs_HC.csv", header=TRUE,row.names = 1, sep='\t')
+de = de[order(de$p),]
+de = de[1:genes_stored,]
+p_results$COPD = de$p
+
+# Add DE 2 - note we call the new results column LUPUS
+de = read.table(file="DE_LUPUS_vs_HC.csv", header=TRUE,row.names = 1, sep='\t')
+de = de[order(de$p),]
+de = de[1:genes_stored,]
+p_results$LUPUS = de$p
+
+# Add DE 3 - note we call the new results column RA
+de = read.table(file="DE_RA_vs_HC.csv", header=TRUE,row.names = 1, sep='\t')
+de = de[order(de$p),]
+de = de[1:genes_stored,]
+p_results$RA = de$p
+
+
+#### Plot ####
+
+# Theme
+theme_SL2 <- function () { 
+  theme_bw() %+replace% 
+    theme(
+      panel.grid = element_blank(),
+      panel.background = element_blank(),
+      panel.border = element_rect(colour = "black", fill=NA, size=1),
+      plot.background = element_blank(), 
+      legend.background = element_rect(fill="transparent", colour=NA),
+      legend.key = element_rect(fill="transparent", colour=NA),
+      legend.title=element_blank(), 
+    )
+}
+
+# Melt table
+p_results.m = melt(p_results, id.vars = "rank")
+
+# Plot
+ggp = ggplot(p_results.m, aes(x = rank, y = -log10(value),group=variable,colour=variable)) + 
+  geom_line(linewidth = 1.5) + 
+  theme_SL2() + 
+  labs(x = "P-Value Rank", y = "-log10p")
+ggp
+
